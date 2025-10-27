@@ -1,3 +1,4 @@
+// ...existing code...
 import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 
@@ -8,70 +9,119 @@ const Translator = () => {
   const [error, setError] = useState("");
   const [shouldTranslate, setShouldTranslate] = useState(false);
 
-
   const handleTranslate = useCallback(() => {
     if (!inputText.trim()) {
       setError("Please enter text to translate.");
       return;
     }
+    setError("");
     setShouldTranslate(true);
-  }, [inputText, language]);
+  }, [inputText]);
 
   useEffect(() => {
     if (!shouldTranslate) return;
 
     const translateText = async () => {
-      const url =
-        "https://microsoft-translator-text-api3.p.rapidapi.com/translate";
+      setError("");
+      setTranslatedText("");
+
+      const getApiKey = () => {
+        // runtime-safe checks for different bundlers/environments
+        try {
+          // Vite: avoid using "typeof import" (reserved) — check import.meta directly
+          if (typeof import.meta !== "undefined" && import.meta.env?.VITE_RAPIDAPI_KEY) {
+            return import.meta.env.VITE_RAPIDAPI_KEY;
+          }
+        } catch (e) {
+          // ignore parse-time/runtime issues
+        }
+        // CRA / other bundlers (will be replaced at build time) and Node env
+        if (typeof process !== "undefined" && process.env?.REACT_APP_RAPIDAPI_KEY) {
+          return process.env.REACT_APP_RAPIDAPI_KEY;
+        }
+        // Runtime fallback (for quick local testing only)
+        if (typeof window !== "undefined" && window.__RAPIDAPI_KEY__) {
+          return window.__RAPIDAPI_KEY__;
+        }
+        return "";
+      };
+
+      const apiKey = getApiKey();
+      if (!apiKey) {
+        setError(
+          "Missing API key. Add VITE_RAPIDAPI_KEY in .env.local (Vite) or REACT_APP_RAPIDAPI_KEY for CRA, then restart dev server."
+        );
+        setShouldTranslate(false);
+        return;
+      }
 
       const options = {
         method: "POST",
+        url: "https://google-translator9.p.rapidapi.com/v2",
         headers: {
+          "x-rapidapi-key": apiKey,
+          "x-rapidapi-host": "google-translator9.p.rapidapi.com",
           "Content-Type": "application/json",
-          "X-RapidAPI-Key": "ba8fba6895msh17a1d4fdc8141a2p1a0672jsnc8b50313382d",
-          "X-RapidAPI-Host": "microsoft-translator-text-api3.p.rapidapi.com",
         },
-        params: {
-          to: language,
-          from: "en",
-          api_version: "3.0",
+        data: {
+          q: inputText,
+          source: "auto",
+          target: language,
+          format: "text",
         },
-        data: [{ text: inputText }],
       };
 
+      let response;
       try {
-        const response = await axios.request(url, options);
-        console.log("API Response:", response.data);
-
-        if (response.data && response.data[0]?.translations) {
-          const translation = response.data[0].translations[0].text;
-          setTranslatedText(translation);
-          setError("");
-        } else {
-          setError("Unexpected response format.");
-        }
-      } catch (error) {
-        console.error("Full API Error:", error.response?.data || error.message);
+        response = await axios.request(options);
+        console.log("API raw response:", response?.data);
+      } catch (err) {
+        console.error("API request error:", err);
         setError(
-          error.response
-            ? `Error: ${error.response.status} - ${error.response.data.message || "Invalid request"
-            }`
-            : error.request
-              ? "No response received from the server."
-              : "Error: " + error.message
+          err?.response
+            ? `Error: ${err.response.status} - ${JSON.stringify(err.response.data)}`
+            : err?.request
+            ? "No response received from server."
+            : "Request error: " + (err?.message || "Unknown")
         );
-      } finally {
         setShouldTranslate(false);
+        return;
       }
+
+      const data = response?.data;
+      let translation = "";
+
+      // handle known response shapes
+      if (data?.data?.translations?.[0]?.translatedText) {
+        translation = data.data.translations[0].translatedText;
+      } else if (data?.translations?.[0]?.translatedText) {
+        translation = data.translations[0].translatedText;
+      } else if (Array.isArray(data) && data[0]?.translations?.[0]?.text) {
+        translation = data[0].translations[0].text;
+      } else if (data?.[0]?.translations?.[0]?.text) {
+        translation = data[0].translations[0].text;
+      } else if (typeof data === "string") {
+        translation = data;
+      }
+
+      if (translation) {
+        setTranslatedText(translation);
+        setError("");
+      } else {
+        setError("Unexpected response format. Check console for raw response.");
+        console.log("Unhandled response shape:", data);
+      }
+
+      setShouldTranslate(false);
     };
 
     translateText();
-  }, [shouldTranslate]);
+  }, [shouldTranslate, inputText, language]);
 
   return (
     <div className="max-w-2xl mx-auto p-4">
       <h1 className="text-3xl font-bold mb-10 mt-10">Text Translator</h1>
-      <h2 className="block text-sm font-medium mb-2">Source Text (English)</h2>
+      <h2 className="block text-sm font-medium mb-2">Source Text</h2>
       <textarea
         className="w-full px-2 py-1 border border-gray-400 min-h-[100px]"
         value={inputText}
@@ -100,19 +150,19 @@ const Translator = () => {
           <option value="id">Indonesian</option>
           <option value="fi">Finnish</option>
           <option value="no">Norwegian</option>
-
-
         </select>
       </div>
+
       <button
         onClick={handleTranslate}
         className="mt-2 w-full py-2 bg-black text-white rounded cursor-pointer"
       >
         Translate
       </button>
+
       {error && <p className="text-red-500 mt-2">{error}</p>}
       <p className="mt-4 p-6 border border-gray-400 text-lg">
-        {translatedText && `Translated Text: ${translatedText}`}
+        {translatedText ? `Translated Text: ${translatedText}` : "No translation yet."}
       </p>
     </div>
   );
